@@ -1,2 +1,4 @@
 uv
 mcp[cli]
+supabase
+python-dotenv

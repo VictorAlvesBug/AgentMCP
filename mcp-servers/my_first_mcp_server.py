@@ -4,7 +4,13 @@ mcp = MCPServer("Meu Servidor MCP")
 
 @mcp.tool()
 def minha_primeira_ferramenta_mcp() -> str:
-    """Essa é a descrição da minha primeira ferramenta MCP"""
+    """Ferramenta de teste que retorna uma saudação fixa.
+
+    Não recebe parâmetros. Use para verificar se o servidor MCP está
+    respondendo corretamente.
+
+    Retorna: o texto "Olá, mundo!".
+    """
     return "Olá, mundo!"
 
 #mcp.register("minha_primeira_ferramenta_mcp", minha_primeira_ferramenta_mcp)
