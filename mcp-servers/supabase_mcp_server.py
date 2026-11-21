@@ -1,143 +1,285 @@
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-from mcp.server.mcpserver import MCPServer
-from supabase import create_client, Client
+# #region agent log
+def _agent_log(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
+    try:
+        import json
+        import time
+
+        payload = {
+            "sessionId": "422962",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "timestamp": int(time.time() * 1000),
+        }
+        log_path = Path(__file__).resolve().parents[1] / ".cursor" / "debug-422962.log"
+        with log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+
+
+_agent_log(
+    "A",
+    "supabase_mcp_server.py:entry",
+    "module import started",
+    {"executable": sys.executable, "argv": sys.argv},
+)
+# #endregion
+
+try:
+    from dotenv import load_dotenv
+    # #region agent log
+    _agent_log("B", "supabase_mcp_server.py:dotenv", "dotenv imported")
+    # #endregion
+except Exception as import_error:
+    # #region agent log
+    _agent_log("B", "supabase_mcp_server.py:dotenv", "dotenv import failed", {"error": f"{type(import_error).__name__}: {import_error}"})
+    # #endregion
+    raise
+
+try:
+    from mcp.server.mcpserver import MCPServer
+    # #region agent log
+    _agent_log("B", "supabase_mcp_server.py:mcp", "mcp imported")
+    # #endregion
+except Exception as import_error:
+    # #region agent log
+    _agent_log("B", "supabase_mcp_server.py:mcp", "mcp import failed", {"error": f"{type(import_error).__name__}: {import_error}"})
+    # #endregion
+    raise
+
+try:
+    from supabase import create_client, Client
+    # #region agent log
+    _agent_log("B", "supabase_mcp_server.py:supabase", "supabase imported")
+    # #endregion
+except Exception as import_error:
+    # #region agent log
+    _agent_log("B", "supabase_mcp_server.py:supabase", "supabase import failed", {"error": f"{type(import_error).__name__}: {import_error}"})
+    # #endregion
+    raise
 
 load_dotenv(Path(__file__).parent / ".env")
 
+# #region agent log
+_agent_log(
+    "C",
+    "supabase_mcp_server.py:env",
+    "env loaded",
+    {"hasUrl": bool(os.getenv("SUPABASE_URL")), "hasKey": bool(os.getenv("SUPABASE_KEY"))},
+)
+# #endregion
+
 mcp = MCPServer("Supabase MCP Server")
 
-supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+try:
+    supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    # #region agent log
+    _agent_log("C", "supabase_mcp_server.py:client", "supabase client created")
+    # #endregion
+except Exception as client_error:
+    # #region agent log
+    _agent_log("C", "supabase_mcp_server.py:client", "supabase client failed", {"error": f"{type(client_error).__name__}: {client_error}"})
+    # #endregion
+    raise
+
+TABLE_NOTES = "notes"
+ALLOWED_TABLES = {TABLE_NOTES}
 
 
 def _error(e: Exception) -> dict[str, str]:
     return {"erro": f"{type(e).__name__}: {e}"}
 
 
+def _validate_table(table: str) -> None:
+    if table not in ALLOWED_TABLES:
+        permitidas = ", ".join(sorted(ALLOWED_TABLES))
+        raise ValueError(f"Tabela '{table}' não permitida. Tabelas permitidas: {permitidas}.")
+
+
+def _title_ilike_pattern(title: str) -> str | None:
+    fragment = title.strip()
+    if not fragment:
+        return None
+    escaped = fragment.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 @mcp.resource("config://app")
-def app_config() -> str:
+def app_config() -> dict[str, str]:
     """Configuração da aplicação"""
     return {
         "name": "Supabase MCP Server",
         "version": "1.0.0",
-        "description": "Servidor MCP para o Supabase",
-        "author": "Victor Bugueno"
+        "description": "Servidor MCP para a tabela public.notes no Supabase",
+        "author": "Victor Bugueno",
     }
 
 
 @mcp.prompt()
 def simple_echo(message: str) -> str:
     """Um prompt simples que pede ao modelo para ecoar uma mensagem"""
-    print(f"Mensagem recebida: {message}")
     return f"Por favor, repita exatamente esta mensagem: {message}"
 
 
 @mcp.tool()
-def get_from_table(
-    table: str,
-    filter: dict[str, Any]
+def get_notes(
+    id: int | None = None,
+    is_done: bool | None = None,
+    title: str | None = None,
 ) -> list[dict[str, Any]] | dict[str, str]:
-    """Busca registros de uma tabela (o "Read" do CRUD), retornando todas as colunas.
+    """Busca registros da tabela public.notes (o "Read" do CRUD), retornando todas as colunas.
+
+    Colunas de notes:
+    - id: bigint, chave primária, gerado pelo banco se omitido.
+    - title: text, not null, padrão ''.
+    - is_done: boolean, not null, padrão false.
+    - created_at: timestamptz, not null, padrão now().
 
     Args:
-        table: nome da tabela, conforme retornado por `list_tables`.
-        filter: filtros de igualdade, mapeando nome da coluna para o valor exato,
-            ex: {"id": 1} ou {"status": "ativo", "cidade": "Recife"}.
-            Todas as condições precisam ser verdadeiras (AND).
-            Use {} para retornar todos os registros da tabela.
+        id: se informado, restringe à nota com essa chave primária.
+        is_done: se informado, restringe a notas concluídas (true) ou pendentes (false).
+        title: se informado, restringe a notas cujo title contém esse trecho
+            (substring, sem diferenciar maiúsculas). Não é igualdade exata.
+            Valor vazio ou só espaços é ignorado. Os caracteres %, _ e \\
+            no trecho são tratados como texto literal.
 
-    Retorna: lista de registros encontrados, cada um como um dicionário
+    Sem nenhum critério, retorna todas as notas. Se mais de um critério vier
+    preenchido, todos precisam ser verdadeiros (AND).
+
+    Retorna: lista de notas encontradas, cada uma como um dicionário
     coluna -> valor. Retorna lista vazia se nada casar com os filtros.
     Em caso de falha, retorna {"erro": "<descrição do erro>"}.
     """
     try:
-        #_validate_table(table)
-        return supabase.table(table).select("*").match(filter).execute().data
+        _validate_table(TABLE_NOTES)
+        query = supabase.table(TABLE_NOTES).select("*")
+        if id is not None:
+            query = query.eq("id", id)
+        if is_done is not None:
+            query = query.eq("is_done", is_done)
+        if title is not None:
+            pattern = _title_ilike_pattern(title)
+            if pattern is not None:
+                query = query.ilike("title", pattern)
+        return query.execute().data
     except Exception as e:
         return _error(e)
 
 
 @mcp.tool()
-def insert_into_table(
-    table: str,
-    data: list[dict[str, Any]]
+def insert_note(
+    title: str,
 ) -> list[dict[str, Any]] | dict[str, str]:
-    """Insere um ou mais registros novos em uma tabela (o "Create" do CRUD).
+    """Insere uma única nota na tabela public.notes (o "Create" do CRUD).
+
+    Colunas de notes:
+    - id: bigint, chave primária, gerado pelo banco se omitido.
+    - title: text, not null, padrão ''.
+    - is_done: boolean, not null, padrão false.
+    - created_at: timestamptz, not null, padrão now().
 
     Args:
-        table: nome da tabela, conforme retornado por `list_tables`.
-        data: lista de registros a inserir, cada um mapeando nome da coluna para o valor,
-            ex: [{"nome": "Ana", "email": "ana@email.com"}].
-            Para inserir um único registro, envie uma lista com um elemento.
-            Não informe colunas geradas automaticamente pelo banco, como `id` ou `created_at`.
+        title: texto da nota. Pode ser string vazia; a coluna aceita ''.
+            id, is_done e created_at não são enviados: o banco preenche
+            os padrões (id gerado, is_done false, created_at now()).
 
-    Retorna: os registros inseridos, incluindo os valores gerados pelo banco (como o `id`).
+    Retorna: lista com a nota inserida, incluindo id, is_done e created_at
+    gerados pelo banco.
     Em caso de falha, retorna {"erro": "<descrição do erro>"}.
     """
     try:
-        #_validate_table(table)
-        return supabase.table(table).insert(data).execute().data
+        _validate_table(TABLE_NOTES)
+        return supabase.table(TABLE_NOTES).insert({"title": title}).execute().data
     except Exception as e:
         return _error(e)
 
 
 @mcp.tool()
-def update_in_table(
-    table: str,
-    filter: dict[str, Any],
-    data: dict[str, Any]
+def check_note(
+    id: int,
 ) -> list[dict[str, Any]] | dict[str, str]:
-    """Altera registros existentes de uma tabela (o "Update" do CRUD).
+    """Marca uma nota como concluída, definindo is_done como true. Não aceita filtro.
+
+    Colunas de notes:
+    - id: bigint, chave primária, gerado pelo banco se omitido.
+    - title: text, not null, padrão ''.
+    - is_done: boolean, not null, padrão false.
+    - created_at: timestamptz, not null, padrão now().
 
     Args:
-        table: nome da tabela, conforme retornado por `list_tables`.
-        filter: filtros de igualdade que selecionam quais registros alterar,
-            ex: {"id": 1}. Todas as condições precisam ser verdadeiras (AND).
-            Prefira filtrar pela chave primária. Nunca envie {}: isso alteraria
-            todos os registros da tabela.
-        data: colunas a alterar e seus novos valores, ex: {"status": "inativo"}.
-            Colunas não informadas permanecem como estão.
+        id: chave primária da nota a marcar. A alteração atinge só esse registro.
 
-    Retorna: lista dos registros alterados, já com os novos valores.
-    Lista vazia significa que nenhum registro casou com os filtros.
+    Retorna: lista com a nota alterada, já com is_done true.
+    Lista vazia significa que nenhuma nota tem esse id.
     Em caso de falha, retorna {"erro": "<descrição do erro>"}.
     """
     try:
-        #_validate_table(table)
-        return supabase.table(table).update(data).match(filter).execute().data
+        _validate_table(TABLE_NOTES)
+        return supabase.table(TABLE_NOTES).update({"is_done": True}).eq("id", id).execute().data
     except Exception as e:
         return _error(e)
 
 
 @mcp.tool()
-def delete_from_table(
-    table: str,
-    filter: list[dict[str, Any]]
+def uncheck_note(
+    id: int,
 ) -> list[dict[str, Any]] | dict[str, str]:
-    """Remove permanentemente registros de uma tabela (o "Delete" do CRUD).
+    """Desmarca uma nota, definindo is_done como false. Não aceita filtro.
 
-    Esta operação não pode ser desfeita. Antes de chamar, use `get_from_table`
-    com o mesmo filtro para confirmar quais registros serão removidos.
+    Colunas de notes:
+    - id: bigint, chave primária, gerado pelo banco se omitido.
+    - title: text, not null, padrão ''.
+    - is_done: boolean, not null, padrão false.
+    - created_at: timestamptz, not null, padrão now().
 
     Args:
-        table: nome da tabela, conforme retornado por `list_tables`.
-        filter: filtros de igualdade que selecionam quais registros remover,
-            ex: {"id": 1}. Todas as condições precisam ser verdadeiras (AND).
-            Prefira filtrar pela chave primária. Nunca envie um filtro vazio:
-            isso apagaria todos os registros da tabela.
+        id: chave primária da nota a desmarcar. A alteração atinge só esse registro.
 
-    Retorna: lista dos registros removidos.
+    Retorna: lista com a nota alterada, já com is_done false.
+    Lista vazia significa que nenhuma nota tem esse id.
     Em caso de falha, retorna {"erro": "<descrição do erro>"}.
     """
     try:
-        #_validate_table(table)
-        return supabase.table(table).delete().match(filter).execute().data
+        _validate_table(TABLE_NOTES)
+        return supabase.table(TABLE_NOTES).update({"is_done": False}).eq("id", id).execute().data
+    except Exception as e:
+        return _error(e)
+
+
+@mcp.tool()
+def delete_notes(
+    id: int,
+) -> list[dict[str, Any]] | dict[str, str]:
+    """Remove permanentemente uma nota pelo id (o "Delete" do CRUD). Não aceita filtro.
+
+    Colunas de notes: id (bigint, chave primária), title (text),
+    is_done (boolean), created_at (timestamptz).
+
+    Esta operação não pode ser desfeita. Antes de chamar, use `get_notes`
+    com id=<id> para confirmar qual nota será removida.
+
+    Args:
+        id: chave primária da nota a remover. A remoção atinge só esse registro.
+
+    Retorna: lista com a nota removida, com id, title, is_done e created_at.
+    Em caso de falha, retorna {"erro": "<descrição do erro>"}.
+    """
+    try:
+        _validate_table(TABLE_NOTES)
+        return supabase.table(TABLE_NOTES).delete().eq("id", id).execute().data
     except Exception as e:
         return _error(e)
 
 
 if __name__ == "__main__":
+    # #region agent log
+    _agent_log("D", "supabase_mcp_server.py:run", "calling mcp.run")
+    # #endregion
     mcp.run()
