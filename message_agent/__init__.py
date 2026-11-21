@@ -1,0 +1,1 @@
+# Este arquivo, mesmo que vazio, transforma a pasta em um pacote Python

@@ -1,4 +1,3 @@
-uv
 mcp[cli]
-supabase
+google-genai
 python-dotenv
