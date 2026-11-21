@@ -9,9 +9,9 @@ SERVERS_FOLDER = AGENT_FOLDER.parent / "mcp_servers"
 
 load_dotenv(AGENT_FOLDER / ".env")
 
-GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 MAX_ITERATIONS = 8
-MAX_HISTORY_MESSAGES = 30
+MAX_HISTORY_MESSAGES = 5 # TODO: Ajustar para 30
 
 SYSTEM_PROMPT = """
 Você é um assistente que conversa em português do Brasil.

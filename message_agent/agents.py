@@ -65,7 +65,7 @@ class McpHub:
 class BaseAgent(ABC):
     def __init__(self):
         self.hub = McpHub(config.MCP_SERVERS)
-        self.memory = Memory(config.MAX_HISTORY_MESSAGES)
+        self.memory = Memory(is_user_message=self.is_user_message, max_history_messages=config.MAX_HISTORY_MESSAGES)
 
     async def initialize(self):
         await self.hub.connect()
@@ -75,6 +75,10 @@ class BaseAgent(ABC):
 
     @abstractmethod
     async def answer(self, chat_id, text):
+        pass
+
+    @abstractmethod
+    def is_user_message(self, message):
         pass
 
 
@@ -126,3 +130,6 @@ class GeminiAgent(BaseAgent):
             history.append(genai_types.Content(role="user", parts=parts))
 
         return "Desculpe, não consegui concluir sua solicitação (limite de etapas atingido)"
+
+    def is_user_message(self, message):
+        return message.role == "user" and any(part.text for part in message.parts or [])
