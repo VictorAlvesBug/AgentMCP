@@ -1,9 +1,9 @@
 import asyncio
 
-from message_agent.agents import GeminiAgent
+from message_agent.agents import GroqAgent
 
 async def main():
-    agent = GeminiAgent()
+    agent = GroqAgent()
     print("Conectando aos servidores MCP...")
     await agent.initialize()
 

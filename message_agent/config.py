@@ -10,8 +10,10 @@ SERVERS_FOLDER = AGENT_FOLDER.parent / "mcp_servers"
 load_dotenv(AGENT_FOLDER / ".env")
 
 GEMINI_MODEL = "gemini-3.5-flash-lite"
+GROQ_MODEL = "openai/gpt-oss-20b"
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 MAX_ITERATIONS = 8
-MAX_HISTORY_MESSAGES = 5 # TODO: Ajustar para 30
+MAX_HISTORY_MESSAGES = 30
 
 SYSTEM_PROMPT = """
 Você é um assistente que conversa em português do Brasil.

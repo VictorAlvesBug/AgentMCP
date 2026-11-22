@@ -1,15 +1,20 @@
+# Bibliotecas padrão
+from message_agent import config
 from message_agent.memory import Memory
-
 from contextlib import AsyncExitStack
-
-from google import genai
-from google.genai import types as genai_types
 from mcp import ClientSession, stdio_client
 from mcp import types as mcp_types
-
-from message_agent import config
-
 from abc import ABC, abstractmethod
+
+# Google Gemini
+from google import genai
+from google.genai import types as genai_types
+
+# Groq
+import os
+from openai import AsyncOpenAI
+
+
 
 SEPARATOR = "__"
 
@@ -85,7 +90,9 @@ class BaseAgent(ABC):
 class GeminiAgent(BaseAgent):
     def __init__(self):
         super().__init__()
-        self.client = genai.Client(http_options=genai_types.HttpOptions(timeout=30_000))
+        self.client = genai.Client(
+            http_options=genai_types.HttpOptions(timeout=30_000) # 30 segundos
+        )
     
     def gemini_tools(self):
         declarations = []
@@ -133,3 +140,34 @@ class GeminiAgent(BaseAgent):
 
     def is_user_message(self, message):
         return message.role == "user" and any(part.text for part in message.parts or [])
+
+class GroqAgent(BaseAgent):
+    def __init__(self):
+        super().__init__()
+        self.client = AsyncOpenAI(
+            api_key=os.getenv("GROQ_API_KEY"),
+            base_url=config.GROQ_BASE_URL,
+            timeout=30, # 30 segundos
+        )
+
+    async def answer(self, chat_id, text):
+        history = self.memory.get_conversation(chat_id)
+        history.append({"role": "user", "content": text})
+
+        messages = [{"role": "system", "content": config.SYSTEM_PROMPT}] + history
+
+        response = await self.client.chat.completions.create(
+            model=config.GROQ_MODEL,
+            messages=messages,
+        )
+
+        message = response.choices[0].message
+
+        history.append({"role": "assistant", "content": message.content})
+        self.memory.trim_conversation(chat_id)
+        return message.content or "(sem resposta)"
+
+    def is_user_message(self, message):
+        return message["role"] == "user"
+
+    
