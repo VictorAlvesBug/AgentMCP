@@ -24,6 +24,7 @@ Regras:
 - Antes de alterar ou apagar registros, busque-os, mostre ao usuário e peça confirmação.
 - Nunca use filtro vazio para alterar ou apagar.
 - Se uma ferramenta retornar erro, explique o problema ao usuário de forma simples.
+- Sempre exiba as notas como um checklist: "✅/⬜ - <id>. <titulo>".
 """
 
 MCP_SERVERS = {

@@ -5,6 +5,8 @@ from contextlib import AsyncExitStack
 from mcp import ClientSession, stdio_client
 from mcp import types as mcp_types
 from abc import ABC, abstractmethod
+import json
+from helpers.cli_helpers import warning
 
 # Google Gemini
 from google import genai
@@ -14,7 +16,12 @@ from google.genai import types as genai_types
 import os
 from openai import AsyncOpenAI
 
-
+# Como funciona uma chamada de ferramenta?
+# 1. Eu pergunto: "Quais são as minhas notas?"
+# 2. O modelo não responde com texto. Ele responde: "quero chamar a ferramenta supabase__get_notes com os argumentos {}".
+# 3. O código executa a ferramenta pelo McpHub e devolve o resultado ao modelo.
+# 4. O modelo lê o resultado e agora sim escreve a resposta em texto.
+# OBS.: Os passos 2 e 3 podem se repetir várias vezes, o que limita essa quantidade de vezes é o MAX_ITERATIONS.
 
 SEPARATOR = "__"
 
@@ -93,18 +100,6 @@ class GeminiAgent(BaseAgent):
         self.client = genai.Client(
             http_options=genai_types.HttpOptions(timeout=30_000) # 30 segundos
         )
-    
-    def gemini_tools(self):
-        declarations = []
-        for tool in self.hub.tools:
-            declarations.append(
-                genai_types.FunctionDeclaration(
-                    name=tool["name"],
-                    description=tool["description"],
-                    parameters_json_schema=tool["parameters"],
-                )
-            )
-        return [genai_types.Tool(function_declarations=declarations)]
 
     async def answer(self, chat_id, text):
         history = self.memory.get_conversation(chat_id)
@@ -140,6 +135,18 @@ class GeminiAgent(BaseAgent):
 
     def is_user_message(self, message):
         return message.role == "user" and any(part.text for part in message.parts or [])
+    
+    def gemini_tools(self):
+        declarations = []
+        for tool in self.hub.tools:
+            declarations.append(
+                genai_types.FunctionDeclaration(
+                    name=tool["name"],
+                    description=tool["description"],
+                    parameters_json_schema=tool["parameters"],
+                )
+            )
+        return [genai_types.Tool(function_declarations=declarations)]
 
 class GroqAgent(BaseAgent):
     def __init__(self):
@@ -154,20 +161,67 @@ class GroqAgent(BaseAgent):
         history = self.memory.get_conversation(chat_id)
         history.append({"role": "user", "content": text})
 
-        messages = [{"role": "system", "content": config.SYSTEM_PROMPT}] + history
+        for _ in range(config.MAX_ITERATIONS):
+            messages = [{"role": "system", "content": config.SYSTEM_PROMPT}] + history
 
-        response = await self.client.chat.completions.create(
-            model=config.GROQ_MODEL,
-            messages=messages,
-        )
+            response = await self.client.chat.completions.create(
+                model=config.GROQ_MODEL,
+                messages=messages,
+                tools=self.groq_tools(),
+            )
 
-        message = response.choices[0].message
+            message = response.choices[0].message
 
-        history.append({"role": "assistant", "content": message.content})
-        self.memory.trim_conversation(chat_id)
-        return message.content or "(sem resposta)"
+            if not message.tool_calls:
+                history.append({"role": "assistant", "content": message.content})
+                self.memory.trim_conversation(chat_id)
+                return message.content or "(sem resposta)"
+
+            history.append({
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.function.name,
+                            "arguments": call.function.arguments,
+                        },
+                    }
+                    for call in message.tool_calls
+                ],
+            })
+
+            for call in message.tool_calls:
+                arguments = json.loads(call.function.arguments or "{}")
+                print(warning(f"[ferramenta] {call.function.name} com os argumentos: {arguments}"))
+                result = await self.hub.call(call.function.name, arguments)
+                history.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": json.dumps(result, ensure_ascii=False, default=str),
+                })
+        
+        return "Desculpe, não consegui concluir sua solicitação (limite de etapas atingido)"
+    
+
+
 
     def is_user_message(self, message):
         return message["role"] == "user"
+
+    def groq_tools(self):
+        declarations = []
+        for tool in self.hub.tools:
+            declarations.append({
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["parameters"],
+                }
+            })
+        return declarations
 
     

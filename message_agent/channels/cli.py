@@ -1,20 +1,22 @@
 import asyncio
+import colorama
+from helpers.cli_helpers import info, warning, error, success
 
 from message_agent.agents import GroqAgent
 
 async def main():
     agent = GroqAgent()
-    print("Conectando aos servidores MCP...")
+    print(info("Conectando aos servidores MCP...\n"))
     await agent.initialize()
 
-    print("Ferramentas disponíveis:")
+    print(info("Ferramentas disponíveis:"))
     for name in agent.hub.routes:
         print(f"- {name}")
-    print("Digite 'sair' para encerrar.\n")
+    print(info("\nDigite 'sair' para encerrar.\n"))
 
     try:
         while True:
-            text = (await asyncio.to_thread(input, "Você: ")).strip()
+            text = (await asyncio.to_thread(input, success("Você: "))).strip()
             if not text:
                 continue
             if text.lower() == "sair":
@@ -24,7 +26,7 @@ async def main():
                 response = await agent.answer("terminal", text)
             except Exception as e:
                 response = f"[Erro] {type(e).__name__}: {e}"
-            print(f"BugChatAI: {response}\n")
+            print(f"{warning('BugChatAI:')}{response}\n")
     finally:
         await agent.terminate()
 
