@@ -2,105 +2,28 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-
-# #region agent log
-def _agent_log(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
-    try:
-        import json
-        import time
-
-        payload = {
-            "sessionId": "422962",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data or {},
-            "timestamp": int(time.time() * 1000),
-        }
-        log_path = Path(__file__).resolve().parents[1] / ".cursor" / "debug-422962.log"
-        with log_path.open("a", encoding="utf-8") as log_file:
-            log_file.write(json.dumps(payload) + "\n")
-    except Exception:
-        pass
-
-
-_agent_log(
-    "A",
-    "supabase_mcp_server.py:entry",
-    "module import started",
-    {"executable": sys.executable, "argv": sys.argv},
-)
-# #endregion
-
-try:
-    from dotenv import load_dotenv
-    # #region agent log
-    _agent_log("B", "supabase_mcp_server.py:dotenv", "dotenv imported")
-    # #endregion
-except Exception as import_error:
-    # #region agent log
-    _agent_log("B", "supabase_mcp_server.py:dotenv", "dotenv import failed", {"error": f"{type(import_error).__name__}: {import_error}"})
-    # #endregion
-    raise
-
-try:
-    from mcp.server.mcpserver import MCPServer
-    # #region agent log
-    _agent_log("B", "supabase_mcp_server.py:mcp", "mcp imported")
-    # #endregion
-except Exception as import_error:
-    # #region agent log
-    _agent_log("B", "supabase_mcp_server.py:mcp", "mcp import failed", {"error": f"{type(import_error).__name__}: {import_error}"})
-    # #endregion
-    raise
-
-try:
-    from supabase import create_client, Client
-    # #region agent log
-    _agent_log("B", "supabase_mcp_server.py:supabase", "supabase imported")
-    # #endregion
-except Exception as import_error:
-    # #region agent log
-    _agent_log("B", "supabase_mcp_server.py:supabase", "supabase import failed", {"error": f"{type(import_error).__name__}: {import_error}"})
-    # #endregion
-    raise
+import json
+import time
+from dotenv import load_dotenv
+from mcp.server.mcpserver import MCPServer
+from supabase import create_client, Client
 
 load_dotenv(Path(__file__).parent / ".env")
 
-# #region agent log
-_agent_log(
-    "C",
-    "supabase_mcp_server.py:env",
-    "env loaded",
-    {"hasUrl": bool(os.getenv("SUPABASE_URL")), "hasKey": bool(os.getenv("SUPABASE_KEY"))},
-)
-# #endregion
-
 mcp = MCPServer("Supabase MCP Server")
 
-try:
-    supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-    # #region agent log
-    _agent_log("C", "supabase_mcp_server.py:client", "supabase client created")
-    # #endregion
-except Exception as client_error:
-    # #region agent log
-    _agent_log("C", "supabase_mcp_server.py:client", "supabase client failed", {"error": f"{type(client_error).__name__}: {client_error}"})
-    # #endregion
-    raise
+supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 TABLE_NOTES = "notes"
 ALLOWED_TABLES = {TABLE_NOTES}
-
-
-def _error(e: Exception) -> dict[str, str]:
-    return {"erro": f"{type(e).__name__}: {e}"}
-
 
 def _validate_table(table: str) -> None:
     if table not in ALLOWED_TABLES:
         permitidas = ", ".join(sorted(ALLOWED_TABLES))
         raise ValueError(f"Tabela '{table}' não permitida. Tabelas permitidas: {permitidas}.")
+
+def _error(e: Exception) -> dict[str, str]:
+    return {"erro": f"{type(e).__name__}: {e}"}
 
 
 def _title_ilike_pattern(title: str) -> str | None:
@@ -279,7 +202,4 @@ def delete_notes(
 
 
 if __name__ == "__main__":
-    # #region agent log
-    _agent_log("D", "supabase_mcp_server.py:run", "calling mcp.run")
-    # #endregion
     mcp.run()
