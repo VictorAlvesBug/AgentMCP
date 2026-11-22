@@ -9,6 +9,8 @@ SERVERS_FOLDER = AGENT_FOLDER.parent / "mcp_servers"
 
 load_dotenv(AGENT_FOLDER / ".env")
 
+PROVIDER = "groq" # "gemini" ou "groq"
+
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 GROQ_MODEL = "openai/gpt-oss-20b"
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
@@ -24,7 +26,8 @@ Regras:
 - Antes de alterar ou apagar registros, busque-os, mostre ao usuário e peça confirmação.
 - Nunca use filtro vazio para alterar ou apagar.
 - Se uma ferramenta retornar erro, explique o problema ao usuário de forma simples.
-- Sempre exiba as notas como um checklist: "✅/⬜ - <id>. <titulo>".
+- Sempre exiba um descritivo inicial, e então liste as notas como um checklist: "✅/⬜ - <id>. <titulo>".
+- Sempre que a lista de notas sofrer alterações, exiba as notas atualizadas.
 """
 
 MCP_SERVERS = {

@@ -195,7 +195,7 @@ class GroqAgent(BaseAgent):
 
             for call in message.tool_calls:
                 arguments = json.loads(call.function.arguments or "{}")
-                print(warning(f"[ferramenta] {call.function.name} com os argumentos: {arguments}"))
+                print(f"[ferramenta] {call.function.name} com os argumentos: {arguments}")
                 result = await self.hub.call(call.function.name, arguments)
                 history.append({
                     "role": "tool",
@@ -224,4 +224,11 @@ class GroqAgent(BaseAgent):
             })
         return declarations
 
+def create_agent():
+    if config.PROVIDER == "gemini":
+        return GeminiAgent()
     
+    if config.PROVIDER == "groq":
+        return GroqAgent()
+    
+    raise ValueError(f"Provider {config.PROVIDER} não suportado. Use 'gemini' ou 'groq'.")

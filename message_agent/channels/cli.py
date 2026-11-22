@@ -2,10 +2,10 @@ import asyncio
 import colorama
 from helpers.cli_helpers import info, warning, error, success
 
-from message_agent.agents import GroqAgent
+from message_agent.agents import create_agent
 
 async def main():
-    agent = GroqAgent()
+    agent = create_agent()
     print(info("Conectando aos servidores MCP...\n"))
     await agent.initialize()
 
