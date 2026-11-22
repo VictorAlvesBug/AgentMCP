@@ -4,16 +4,24 @@ from pathlib import Path
 from dotenv import load_dotenv
 from mcp import StdioServerParameters
 
+import os
+
 AGENT_FOLDER = Path(__file__).parent
 SERVERS_FOLDER = AGENT_FOLDER.parent / "mcp_servers"
 
 load_dotenv(AGENT_FOLDER / ".env")
 
+TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+
 PROVIDER = "groq" # "gemini" ou "groq"
 
 GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 GROQ_MODEL = "openai/gpt-oss-20b"
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+TELEGRAM_BASE_URL = "https://api.telegram.org/bot"
+
 MAX_ITERATIONS = 8
 MAX_HISTORY_MESSAGES = 30
 

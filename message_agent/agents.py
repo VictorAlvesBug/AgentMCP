@@ -93,6 +93,10 @@ class BaseAgent(ABC):
     def is_user_message(self, message):
         pass
 
+    @abstractmethod
+    def who_am_i(self):
+        pass
+
 
 class GeminiAgent(BaseAgent):
     def __init__(self):
@@ -147,6 +151,9 @@ class GeminiAgent(BaseAgent):
                 )
             )
         return [genai_types.Tool(function_declarations=declarations)]
+    
+    def who_am_i(self):
+        return "GeminiAgent"
 
 class GroqAgent(BaseAgent):
     def __init__(self):
@@ -204,9 +211,6 @@ class GroqAgent(BaseAgent):
                 })
         
         return "Desculpe, não consegui concluir sua solicitação (limite de etapas atingido)"
-    
-
-
 
     def is_user_message(self, message):
         return message["role"] == "user"
@@ -223,6 +227,9 @@ class GroqAgent(BaseAgent):
                 }
             })
         return declarations
+    
+    def who_am_i(self):
+        return "GroqAgent"
 
 def create_agent():
     if config.PROVIDER == "gemini":

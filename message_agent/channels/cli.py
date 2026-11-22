@@ -6,7 +6,7 @@ from message_agent.agents import create_agent
 
 async def main():
     agent = create_agent()
-    print(info("Conectando aos servidores MCP...\n"))
+    print(info(f"Iniciando LLM {agent.who_am_i()} e conectando aos servidores MCP...\n"))
     await agent.initialize()
 
     print(info("Ferramentas disponíveis:"))
