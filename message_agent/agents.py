@@ -14,7 +14,7 @@ from google.genai import types as genai_types
 
 # Groq
 import os
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 
 # Como funciona uma chamada de ferramenta?
 # 1. Eu pergunto: "Quais são as minhas notas?"
@@ -143,6 +143,8 @@ class GeminiAgent(BaseAgent):
     def gemini_tools(self):
         declarations = []
         for tool in self.hub.tools:
+            if "telegram_user" in tool["name"]:
+                continue
             declarations.append(
                 genai_types.FunctionDeclaration(
                     name=tool["name"],
@@ -171,11 +173,7 @@ class GroqAgent(BaseAgent):
         for _ in range(config.MAX_ITERATIONS):
             messages = [{"role": "system", "content": config.SYSTEM_PROMPT}] + history
 
-            response = await self.client.chat.completions.create(
-                model=config.GROQ_MODEL,
-                messages=messages,
-                tools=self.groq_tools(),
-            )
+            response = await self.create_completion(messages)
 
             message = response.choices[0].message
 
@@ -218,6 +216,8 @@ class GroqAgent(BaseAgent):
     def groq_tools(self):
         declarations = []
         for tool in self.hub.tools:
+            if "telegram_user" in tool["name"]:
+                continue
             declarations.append({
                 "type": "function",
                 "function": {
@@ -230,6 +230,26 @@ class GroqAgent(BaseAgent):
     
     def who_am_i(self):
         return "GroqAgent"
+
+    async def create_completion(self, messages):
+        for _ in range(3):
+            try:
+                return await self.client.chat.completions.create(
+                    model=config.GROQ_MODEL,
+                    messages=messages,
+                    tools=self.groq_tools(),
+                )
+            except BadRequestError as e:
+                if "tool call validation failed" in str(e):
+                    print(f"Ocorreu um erro ao criar completion: {e}")
+                    continue
+                raise
+            except Exception as e:
+                print(f"Erro ao criar completion: {e}")
+                raise
+        error_message = "Ocorreu um erro ao criar completion"
+        print(error_message)
+        raise RuntimeError(error_message)
 
 def create_agent():
     if config.PROVIDER == "gemini":

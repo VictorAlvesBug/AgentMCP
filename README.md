@@ -113,17 +113,17 @@ Nesse modo o servidor se comunica por entrada/saída padrão e fica aguardando u
 
 ### Ferramentas
 
-Todas as ferramentas operam só em `public.notes` (`id` bigint, `title` text not null padrão `''`, `is_done` boolean not null padrão `false`, `created_at` timestamptz not null padrão `now()`). O nome da tabela não é parâmetro: fica fixo no servidor e passa pela lista de tabelas permitidas, que por enquanto contém apenas `notes`. `get_notes` aceita os filtros opcionais `id`, `is_done` e `title`; quando mais de um vem preenchido, combina com AND. `title` busca um trecho do texto (substring, sem diferenciar maiúsculas), não a igualdade exata, e valor vazio ou só espaços é ignorado. `check_note`, `uncheck_note` e `delete_notes` não recebem filtro: alteram ou removem uma única nota pelo `id`. Em caso de falha, retornam `{"erro": "<tipo>: <mensagem>"}` em vez de interromper a chamada.
+Todas as ferramentas operam só em `public.notes` (`id` bigint, `title` text not null padrão `''`, `is_done` boolean not null padrão `false`, `created_at` timestamptz not null padrão `now()`). O nome da tabela não é parâmetro: fica fixo no servidor e passa pela lista de tabelas permitidas, que por enquanto contém apenas `notes`. `get_notes` aceita os filtros opcionais `id`, `is_done` e `title`; quando mais de um vem preenchido, combina com AND. `title` busca um trecho do texto (substring, sem diferenciar maiúsculas), não a igualdade exata, e valor vazio ou só espaços é ignorado. `check_note`, `uncheck_note` e `remove_note` não recebem filtro: alteram ou removem uma única nota pelo `id`. Em caso de falha, retornam `{"erro": "<tipo>: <mensagem>"}` em vez de interromper a chamada.
 
 | Ferramenta | Operação | Parâmetros | Exemplo |
 | --- | --- | --- | --- |
 | `get_notes` | Read | `id`, `is_done`, `title` (todos opcionais) | `{}`, `{"id": 1}`, `{"is_done": false, "title": "leite"}` |
-| `insert_note` | Create | `title` | `{"title": "Comprar leite"}` |
+| `create_note` | Create | `title` | `{"title": "Comprar leite"}` |
 | `check_note` | Update | `id` | `{"id": 1}` |
 | `uncheck_note` | Update | `id` | `{"id": 1}` |
-| `delete_notes` | Delete | `id` | `{"id": 1}` |
+| `remove_note` | Delete | `id` | `{"id": 1}` |
 
-Em `get_notes`, omitir todos os parâmetros retorna todas as notas. O trecho de `title` vira um `ilike` no padrão `%trecho%`; `%`, `_` e `\` digitados no trecho são escapados e valem como texto literal (buscar `"100%"` não trata `%` como curinga). `insert_note` grava só o `title` e não envia `id`, `is_done` nem `created_at`: o banco preenche os padrões. `title` vazio também é inserido. `check_note` define `is_done` como `true` e `uncheck_note` como `false`, sempre só na nota daquele `id`.
+Em `get_notes`, omitir todos os parâmetros retorna todas as notas. O trecho de `title` vira um `ilike` no padrão `%trecho%`; `%`, `_` e `\` digitados no trecho são escapados e valem como texto literal (buscar `"100%"` não trata `%` como curinga). `create_note` grava só o `title` e não envia `id`, `is_done` nem `created_at`: o banco preenche os padrões. `title` vazio também é inserido. `check_note` define `is_done` como `true` e `uncheck_note` como `false`, sempre só na nota daquele `id`.
 
 ### Recurso
 

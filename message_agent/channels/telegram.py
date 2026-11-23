@@ -26,9 +26,30 @@ async def send_message(client, chat_id, text):
         piece = text[start:start + MAX_MESSAGE_LENGTH]
         await call_api(client, "sendMessage", chat_id=chat_id, text=piece)
 
+async def check_access(agent, user_id):
+    try:
+        if user_id == config.TELEGRAM_ADMIN_ID:
+            return "allowed"
+
+        response = await agent.hub.call("supabase__get_telegram_user", {"telegram_user_id": user_id})
+        
+        if ("result" in response 
+            and "result" in response.get("result")
+            and "telegram_user_id" in response.get("result").get("result") 
+            and response.get("result").get("result").get("telegram_user_id") == user_id):
+            return "allowed"
+        return "denied"
+    except Exception as e:
+        print(f"Erro ao verificar acesso: {e}")
+        return "error"
+
 async def main():
     if not config.TELEGRAM_BOT_TOKEN:
         print(error("Erro: TELEGRAM_BOT_TOKEN não configurado no arquivo message_agent/.env"))
+        return
+
+    if config.TELEGRAM_ADMIN_ID is None:
+        print(error("Erro: TELEGRAM_ADMIN_ID não configurado no arquivo message_agent/.env"))
         return
     
     agent = create_agent()
@@ -40,7 +61,7 @@ async def main():
         print(f"- {name}")
     print(info("\nBot ligado. Mande uma mensagem no Telegram. Ctrl+C para encerrar.\n"))
 
-    # O getUpdates espera até 30s. O cliente HTTO precisa aguentar um pouco mais.
+    # O getUpdates espera até 30s. O cliente HTTP precisa aguentar um pouco mais.
     timeout = httpx.Timeout(40.0, connect=10.0)
 
     try:
@@ -62,21 +83,36 @@ async def main():
                     message = update.get("message") or {}
                     chat = message.get("chat") or {}
                     chat_id = chat.get("id")
+                    user_id = (message.get("from") or {}).get("id")
                     text = (message.get("text") or "").strip()
 
-                    if chat_id is None or not text:
+                    if chat_id is None or user_id is None or not text:
                         continue
 
-                    sender = (message.get("from") or {}).get("first_name") or "(anônimo)"
-                    print(f"{success(sender + ':')} {text}")
+                    user_name = (message.get("from") or {}).get("username") or "(anônimo)"
 
-                    try: 
-                        reply = await agent.answer(str(chat_id), text)
-                    except Exception as exc:
-                        reply = f"[Erro] {type(exc).__name__}: {exc}"
-
-                    print(f"{warning('BugChatAI:')} {reply}\n")
-                    await send_message(client, chat_id, reply)
+                    access = await check_access(agent, user_id)
+                    if access == "allowed":
+                        print(f"{success(user_name + ':')} {text}")
+                        try: 
+                            reply = await agent.answer(str(chat_id), text)
+                        except Exception as e:
+                            print(f"[Erro] {type(e).__name__}: {e}")
+                            reply = "Tive um problema para responder agora. Tente de novo em instantes."
+                        print(f"{warning('BugChatAI:')} {reply}\n")
+                        await send_message(client, chat_id, reply)
+                    elif access == "denied":
+                        message = f"Acesso negado para o usuário {user_id} ({user_name})."
+                        print(f"{error(message)}\n")
+                        await send_message(client, chat_id, message)
+                    elif access == "error":
+                        message = f"Ocorreu um erro ao verificar acesso para o usuário {user_id} ({user_name})."
+                        print(f"{error(message)}\n")
+                        await send_message(client, chat_id, message)
+                    else:
+                        message = f"Ocorreu um erro desconhecido ao verificar acesso para o usuário {user_id} ({user_name})."
+                        print(f"{error(message)}\n")
+                        await send_message(client, chat_id, message)
     finally:
         await agent.terminate()
 
