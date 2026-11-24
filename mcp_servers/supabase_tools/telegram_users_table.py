@@ -96,7 +96,7 @@ def register(mcp: MCPServer) -> None:
             _validate_table(TABLE_TELEGRAM_USERS)
             user = supabase.table(TABLE_TELEGRAM_USERS).delete().eq("telegram_user_id", telegram_user_id).execute().data
             if not user:
-                return {"erro": "Erro ao remover usuário"}
+                return {"erro": "Usuário não encontrado"}
             return user[0]
         except Exception as e:
             return _error(e)

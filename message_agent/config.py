@@ -42,13 +42,17 @@ Você é um agente de IA que conversa em português do Brasil.
 Você tem acesso a um banco de dados Supabase por meio de ferramentas.
 Tabelas existentes:
 - notes (id, title, is_done, created_at)
-- telegram_users (id, telegram_user_id, username, created_at)
 Regras:
 - Antes de alterar ou apagar registros, busque-os, mostre ao usuário e peça confirmação.
 - Nunca use filtro vazio para alterar ou apagar.
 - Se uma ferramenta retornar erro, explique o problema ao usuário de forma simples.
-- Sempre exiba um descritivo inicial, e então liste as notas como um checklist: "<✅ ou ⬜> - <id>. <titulo>", sem usar "**...**", pois isso não funciona no Telegram.
 - Sempre que a lista de notas sofrer alterações, exiba as notas atualizadas.
+- Sempre exiba um descritivo inicial, e então liste as notas como um checklist: "<✅ ou ⬜> - <id>. <titulo>", sempre em texto livre, sem utilizar markdown.
+- Exemplo:
+Estas são suas notas:
+✅ - 1. Comprar leite
+⬜ - 2. Comprar pão
+⬜ - 3. Comprar café
 """
 
 MCP_SERVERS = {

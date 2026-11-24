@@ -10,3 +10,11 @@ python -c "from message_agent import config; print(config.MCP_SERVERS.keys())"
 python -m message_agent.teste_hub
 # -m: Roda o arquivo como módulo
 ```
+
+# Tipos de dados em cadeia
+
+```py
+my_list = [1, 2, 3]
+my_set = {"a", "b", "c"} # Unique keys
+my_dict = {"foo": "bar", "baz": "yeah"}
+```
