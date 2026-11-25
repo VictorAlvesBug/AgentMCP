@@ -1,6 +1,8 @@
 import asyncio
+
 import httpx
-from helpers.cli_helpers import info, warning, error, success
+
+from helpers.cli_helpers import error, info, success, warning
 from mcp_servers.supabase_tools.telegram_users_type import TelegramUser
 from message_agent import config
 from message_agent.agents import create_agent
@@ -8,7 +10,28 @@ from message_agent.agents import create_agent
 # O tamanho máximo de uma mensagem no Telegram é de 4096 caracteres
 MAX_MESSAGE_LENGTH = 4000
 
-ADMIN_COMMANDS = { "/grant_access", "/revoke_access", "/list_access" }
+ADMIN_COMMANDS = { 
+    "/grant_access": {
+        "parameters": "<user_id> [<username>]",
+        "description": "Concede acesso a um usuário",
+        "access": "admin",
+    },
+    "/revoke_access": {
+        "parameters": "<user_id>", 
+        "description": "Revoga acesso a um usuário",
+        "access": "admin",
+    },
+    "/list_access": {
+        "parameters": None,
+        "description": "Lista todos os usuários com acesso",
+        "access": "admin",
+    },
+    "/help": {
+        "parameters": None,
+        "description": "Mostra esta mensagem de ajuda",
+        "access": "user",
+    }
+}
 
 def api_url(method: str):
     return f"{config.TELEGRAM_BASE_URL}{config.TELEGRAM_BOT_TOKEN}/{method}"
@@ -21,12 +44,21 @@ async def call_api(client, method, **payload):
         raise RuntimeError(description)
     return data.get("result")
 
-async def send_message(client, chat_id, text):
+async def send_bot_message(client, chat_id, text):
     if not text:
         text = "(sem resposta)"
     for start in range(0, len(text), MAX_MESSAGE_LENGTH):
         piece = text[start:start + MAX_MESSAGE_LENGTH]
         await call_api(client, "sendMessage", chat_id=chat_id, text=piece)
+
+def help_text(is_admin: bool) -> str:
+    help_list = ["Sou um assistente de IA. Gerencie suas notas comigo."]
+    
+    for command, props in ADMIN_COMMANDS.items():
+        if props['access'] != "admin" or is_admin:
+            help_list.append(f"{command} {props['parameters'] + ' ' if props['parameters'] else ''}- {props['description']}")
+
+    return "\n".join(help_list)
 
 def unwrap_response(response: dict) -> dict | list | None:
     if isinstance(response, dict) and "result" in response and isinstance(response["result"], dict) and "result" in response["result"]:
@@ -47,22 +79,28 @@ async def check_access(agent, user_id):
         print(f"Erro ao verificar acesso: {e}")
         return "error"
 
-def parse_command(text: str) -> tuple[bool, str | None, list[str] | None]:
+def parse_command(text: str) -> tuple[str | None, list[str]]:
     if not text.startswith("/"):
-        return False, None, None
+        return None, []
     parts_splitted_by_space = text.split()
     command_kind, *_ = [part.lower() for part in parts_splitted_by_space[0].split("@")]
     command_args = parts_splitted_by_space[1:]
-    is_command = command_kind in ADMIN_COMMANDS
-    return is_command, command_kind, command_args
+    return command_kind, command_args
 
-async def execute_admin_command(agent, command_kind: str, command_args: list[str]) -> str:
+def get_command(command_kind: str) -> tuple[bool, str | None]:
+    is_valid = command_kind in ADMIN_COMMANDS
+    role = ADMIN_COMMANDS.get(command_kind, {}).get("access") if is_valid else None
+    return is_valid, role
+
+async def execute_command(agent, command_kind: str, command_args: list[str], is_admin: bool) -> str:
     if command_kind == "/grant_access":
         return await grant_access(agent, command_args)
     elif command_kind == "/revoke_access":
         return await revoke_access(agent, command_args)
     elif command_kind == "/list_access":
         return await list_access(agent, command_args)
+    elif command_kind == "/help":
+        return help_text(is_admin)
     else:
         return "Comando desconhecido."
 
@@ -140,7 +178,7 @@ async def list_access(agent, command_args: list[str]) -> str:
         users_formatted = [(f"{user['telegram_user_id']} - {user['username'] or '<username não definido>'}") for user in users]
         return "Usuários com acesso:\n" + "\n".join(users_formatted)
     except Exception as e:
-        user_error_message = f"Erro ao listar usuários com acesso"
+        user_error_message = "Erro ao listar usuários com acesso"
         print(f"{error(user_error_message)}: {type(e).__name__}: {e}")
         return user_error_message
 
@@ -192,42 +230,65 @@ async def main():
 
                     username = (message.get("from") or {}).get("username") or "(anônimo)"
 
-                    is_command, command_kind, command_args = parse_command(text)
-
-                    if is_command:
-                        if user_id != config.TELEGRAM_ADMIN_ID:
-                            error_message = f"Este comando é restrito ao administrador do bot."
-                            print(f"{error(error_message)}\n")
-                            await send_message(client, chat_id, error_message)
-                            continue
-
-                        message_to_send = await execute_admin_command(agent, command_kind, command_args)
-                        print(f"{success(username + ':')} {message_to_send}")
-                        await send_message(client, chat_id, message_to_send)
-                        continue
+                    command_kind, command_args = parse_command(text)
 
                     access = await check_access(agent, user_id)
-                    if access == "allowed":
-                        print(f"{success(username + ':')} {text}")
-                        try: 
-                            reply = await agent.answer(str(chat_id), text)
-                        except Exception as e:
-                            print(f"[Erro] {type(e).__name__}: {e}")
-                            reply = "Tive um problema para responder agora. Tente de novo em instantes."
-                        print(f"{warning('BugChatAI:')} {reply}\n")
-                        await send_message(client, chat_id, reply)
-                    elif access == "denied":
-                        error_message = f"Acesso negado para o usuário {user_id} ({username})."
-                        print(f"{error(error_message)}\n")
-                        await send_message(client, chat_id, error_message)
-                    elif access == "error":
+
+                    if access == "error":
                         error_message = f"Ocorreu um erro ao verificar acesso para o usuário {user_id} ({username})."
                         print(f"{error(error_message)}\n")
-                        await send_message(client, chat_id, error_message)
-                    else:
-                        error_message = f"Ocorreu um erro desconhecido ao verificar acesso para o usuário {user_id} ({username})."
-                        print(f"{error(error_message)}\n")
-                        await send_message(client, chat_id, error_message)
+                        await send_bot_message(client, chat_id, error_message)
+                        continue
+
+                    if access == "denied":
+                        access_denied_message_list = ["Acesso negado."]
+                        access_denied_message_list.append("Solicite acesso ao administrador do bot, informando seu id e username")
+                        access_denied_message_list.append(f"id: {user_id}")
+                        access_denied_message_list.append(f"username: {username}")
+                        access_denied_message_list.append("@victoralvesbug")
+                        access_denied_message = "\n".join(access_denied_message_list)
+                        print(f"{warning(access_denied_message)}\n")
+                        await send_bot_message(client, chat_id, access_denied_message)
+                        continue
+
+                    if access != "allowed":
+                        unknown_error_message = f"Ocorreu um erro desconhecido ao verificar acesso para o usuário {user_id} ({username})."
+                        print(f"{error(unknown_error_message)}\n")
+                        await send_bot_message(client, chat_id, unknown_error_message)
+                        continue
+
+                    is_valid_command, command_role = get_command(command_kind)
+
+                    is_admin_user = user_id == config.TELEGRAM_ADMIN_ID
+                    is_user_command = command_role != "admin"
+                    is_admin_command_and_admin_user = command_role == "admin" and is_admin_user
+                    
+                    if is_valid_command:
+                        if is_user_command or is_admin_command_and_admin_user:
+                            command_result = await execute_command(agent, command_kind, command_args, is_admin_user)
+                            print(f"{info('Gerenciador de Comandos:')} {command_result}")
+                            await send_bot_message(client, chat_id, command_result)
+                            continue
+                        
+                        command_result = "Comando restrito ao administrador do bot."
+                        print(f"{info('Gerenciador de Comandos:')} {command_result}")
+                        await send_bot_message(client, chat_id, command_result)
+                        continue
+
+                    if command_kind is not None:
+                        command_result = "Comando desconhecido."
+                        print(f"{info('Gerenciador de Comandos:')} {command_result}")
+                        await send_bot_message(client, chat_id, command_result)
+                        continue
+
+                    print(f"{success(username + ':')} {text}")
+                    try: 
+                        reply = await agent.answer(str(chat_id), text)
+                    except Exception as e:
+                        print(f"[Erro] {type(e).__name__}: {e}")
+                        reply = "Tive um problema para responder agora. Tente de novo em instantes."
+                    print(f"{warning('BugChatAI:')} {reply}\n")
+                    await send_bot_message(client, chat_id, reply)
     finally:
         await agent.terminate()
 
