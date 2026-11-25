@@ -1,20 +1,18 @@
 # Bibliotecas padrão
-from message_agent import config
-from message_agent.memory import Memory
-from contextlib import AsyncExitStack
-from mcp import ClientSession, stdio_client
-from mcp import types as mcp_types
-from abc import ABC, abstractmethod
+import asyncio
 import json
-from helpers.cli_helpers import warning
+import os
+from abc import ABC, abstractmethod
+from contextlib import AsyncExitStack
 
-# Google Gemini
 from google import genai
 from google.genai import types as genai_types
-
-# Groq
-import os
+from mcp import ClientSession, stdio_client
+from mcp import types as mcp_types
 from openai import AsyncOpenAI, BadRequestError
+
+from message_agent import config
+from message_agent.memory import Memory
 
 # Como funciona uma chamada de ferramenta?
 # 1. Eu pergunto: "Quais são as minhas notas?"
@@ -33,14 +31,18 @@ class McpHub:
         self.tools = []
 
     async def connect(self):
+        print("Conectando aos servidores MCP...")
         for prefix, parameters in self.servers.items():
+            print(f"Conectando ao servidor {prefix}...")
             reader, writer = await self.stack.enter_async_context(stdio_client(parameters))
             session = await self.stack.enter_async_context(ClientSession(reader, writer))
-            await session.initialize()
-
+            await asyncio.wait_for(session.initialize(), timeout=30)
+            print(f"Servidor {prefix} conectado com sucesso")
             result = await session.list_tools()
+            print(f"{len(result.tools)} ferramentas do servidor {prefix}")
             for tool in result.tools:
                 name = f"{prefix}{SEPARATOR}{tool.name}"
+
                 self.routes[name] = (session, tool.name)
                 self.tools.append({
                     "name": name,
@@ -97,6 +99,15 @@ class BaseAgent(ABC):
     def who_am_i(self):
         pass
 
+    def visible_tools(self):
+        return [tool for tool in self.hub.tools if tool["name"] in config.TOOLS_VISIBLE_BY_MODEL]
+
+    async def call_visible_tool(self, tool_name, arguments):
+        if tool_name not in config.TOOLS_VISIBLE_BY_MODEL:
+            return {"error": f"Ferramenta {tool_name} não permitida"}
+        
+        return await self.hub.call(tool_name, arguments)
+
 
 class GeminiAgent(BaseAgent):
     def __init__(self):
@@ -130,7 +141,7 @@ class GeminiAgent(BaseAgent):
             for call in response.function_calls:
                 arguments = dict(call.args or {})
                 print(f"[ferramenta] {call.name} com os argumentos: {arguments}")
-                result = await self.hub.call(call.name, arguments)
+                result = await self.call_visible_tool(call.name, arguments)
                 parts.append(genai_types.Part.from_function_response(name=call.name, response=result))
 
             history.append(genai_types.Content(role="user", parts=parts))
@@ -142,9 +153,7 @@ class GeminiAgent(BaseAgent):
     
     def gemini_tools(self):
         declarations = []
-        for tool in self.hub.tools:
-            if "telegram_user" in tool["name"]:
-                continue
+        for tool in self.visible_tools():
             declarations.append(
                 genai_types.FunctionDeclaration(
                     name=tool["name"],
@@ -201,7 +210,7 @@ class GroqAgent(BaseAgent):
             for call in message.tool_calls:
                 arguments = json.loads(call.function.arguments or "{}")
                 print(f"[ferramenta] {call.function.name} com os argumentos: {arguments}")
-                result = await self.hub.call(call.function.name, arguments)
+                result = await self.call_visible_tool(call.function.name, arguments)
                 history.append({
                     "role": "tool",
                     "tool_call_id": call.id,
@@ -215,9 +224,7 @@ class GroqAgent(BaseAgent):
 
     def groq_tools(self):
         declarations = []
-        for tool in self.hub.tools:
-            if "telegram_user" in tool["name"]:
-                continue
+        for tool in self.visible_tools():
             declarations.append({
                 "type": "function",
                 "function": {
